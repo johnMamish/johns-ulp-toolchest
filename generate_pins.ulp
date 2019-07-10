@@ -1,0 +1,160 @@
+/**
+ * This ULP generates "vanilla"-ly named pins when in schematic view.
+ *
+ * You can choose between BGA-shaped and rect-shaped numbering. For BGA, pins will be named
+ * P$A1, P$A2... P$A15, P$B1, P$B2, ...., P$O14, P$O15. For "rect-shaped", pins will just be numbered
+ * P$1 thru P$Npins.
+ *
+ * Pins generated in this way can then be easily associated to symbol pads, and then renamed using
+ * pin_name.ulp
+ */
+
+/**
+ * Converts a BGA row to base 26, e.g. n = 27 becomes AA, 28 --> AB, 29 --> AC
+ */
+string int_to_bganum(int n)
+{
+    string res = "";
+    int loopcount = 0;
+    do {
+        char remainder = (n % 26) + 65;
+        n /= 26;
+
+        // because the A B C ... Z AA AB AC scheme isn't really a euclidian numbering scheme.
+        if (loopcount > 0) {
+            remainder -= 1;
+        }
+
+        sprintf(res, "%c%s", remainder, res);
+        loopcount++;
+    } while (n > 0);
+    return res;
+}
+
+void main() {
+    // Check to make sure that we're in the right view. This should run from the symbol editor view.
+    if (!symbol) {
+        dlgMessageBox("This ULP must be executed from the symbol creation view.");
+        exit(-1);
+    }
+
+    // Different code executes depending on whether we want to generate pin names for gridarray
+    // style packages (e.g. bga, wlcsp, lga) or quad/bi style packages (e.g. sop, qfp, qfn)
+    int result = dlgMessageBox("Choose package type\nDetermines naming scheme of generated pins.",
+                               "BGA", "non-BGA", "cancel");
+
+    string cmds = "";
+    switch(result) {
+        // gridarray-style package
+        case 0: {
+            // dialog for acquiring strings
+            string BGA_cols_str = "";
+            string BGA_rows_str = "";
+
+            int result = dlgDialog("Enter parameters") {
+                dlgVBoxLayout {
+                    dlgHBoxLayout {
+                        dlgVBoxLayout {
+                            dlgLabel("Enter BGA num columns");
+                            dlgStringEdit(BGA_cols_str);
+                        }
+                        dlgVBoxLayout {
+                            dlgLabel("Enter BGA num rows");
+                            dlgStringEdit(BGA_rows_str);
+                        }
+                    }
+                    dlgPushButton("OK") {
+                        dlgAccept();
+                    }
+                }
+            };
+
+            // parse strings
+            int BGA_cols;
+            BGA_cols = strtol(BGA_cols_str);
+            int BGA_rows;
+            BGA_rows = strtol(BGA_rows_str);
+            if ((BGA_cols == 0) || (BGA_rows == 0)) {
+                dlgMessageBox("You entered an invalid value for columns or rows.");
+                exit(-1);
+            }
+            if ((BGA_cols * BGA_rows) > 3000) {
+                dlgMessageBox("The number of bga pins that will be generated exceeds 3000.\n"
+                              "You probably don't want to do this, so the script is aborting.\n"
+                              "If you actually do want to do this, please edit the script.");
+                exit(-1);
+            }
+
+            for (int row = 0; row < BGA_rows; row++) {
+                for (int col = 1; col <= BGA_cols; col++) {
+                    string sbuf;
+                    sprintf(sbuf, "pin \'P$%s%d\' (%8f %8f);\n",
+                            int_to_bganum(row), col, (col - 1) * 0.6, row * -0.1);
+                    cmds += sbuf;
+                }
+            }
+
+            break;
+        }
+
+        // quad/bi style package
+        case 1: {
+            // dialog for acquiring strings
+            string pins_str = "";
+
+            int result = dlgDialog("Enter parameters") {
+                dlgVBoxLayout {
+                    dlgHBoxLayout {
+                        dlgVBoxLayout {
+                            dlgLabel("Enter number of pins");
+                            dlgStringEdit(pins_str);
+                        }
+                    }
+                    dlgPushButton("OK") {
+                        dlgAccept();
+                    }
+                }
+            };
+
+            // parse strings
+            int npins = strtol(pins_str);
+            if (npins == 0) {
+                dlgMessageBox("You entered an invalid number of pins.");
+                exit(-1);
+            }
+            if (npins > 512) {
+                dlgMessageBox("You say you want " + npins + " pins.\n"
+                              "That's a very large number. Aborting.\n"
+                              "If you really need " + npins + " pins, edit this ulp by hand.");
+                exit(-1);
+            }
+
+            int nrows = (npins / 4);
+            if (npins % 4) {
+                nrows++;
+            }
+
+            for (int col = 0; col < 4; col++) {
+                for (int row = 0; row < nrows; row++) {
+                    string sbuf;
+                    int pin_num = col * nrows + row;
+                    if (pin_num < npins) {
+                        sprintf(sbuf, "pin \'P$%d\' (%8f %8f);\n", pin_num + 1,
+                                col * 0.5, row * -0.1);
+                        cmds += sbuf;
+                    }
+                }
+            }
+
+            break;
+        }
+
+        // just exit.
+        case 2: {
+            exit(-1);
+            break;
+        }
+    }
+
+    exit(cmds);
+}

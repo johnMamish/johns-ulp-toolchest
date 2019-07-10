@@ -1,0 +1,130 @@
+
+/**
+ * none of this octal, hex, or negative number nonsense.
+ */
+int mystrtoi(string str)
+{
+    int result = 0;
+
+    for (int i = 0; str[i]; i++) {
+        if (!isdigit(str[i])) {
+            return -1;
+        }
+
+        result *= 10;
+        result += str[i] - 48;
+    }
+
+    return result;
+}
+
+/**
+ * Converts an ALL-CAPS alpha string to a unique number.
+ *
+ * e.g. FOOF becomes 006015015006
+ */
+int alphastrtoi(string alpha)
+{
+    int result = 0;
+
+    for (int i = 0; alpha[i]; i++) {
+        if (!((alpha[i] >= 'A') && (alpha[i] <= 'Z'))) {
+            return -1;
+        }
+
+        result *= 100;
+        result += alpha[i] - 64;
+    }
+
+    return result;
+}
+
+/**
+ * Acts just like C's strcmp
+ */
+int strcmp(string s1, string s2)
+{
+    int i = 0;
+    char c1;
+    char c2;
+    do
+    {
+        c1 = s1[i];
+        c2 = s2[i];
+        if (c1 == '\0') {
+            return c1 - c2;
+        }
+
+        i++;
+    } while (c1 == c2);
+    return c1 - c2;
+}
+
+
+/**
+ * Returns a negative number if the given pin name is not one of the expected forms.
+ *
+ * P$AF24 will turn into
+ *
+ * A  F    24
+ * 001 006 0024
+ */
+int pin_name_to_numeric_form(string pin_name)
+{
+    if ((pin_name[0] != 'P') || (pin_name[1] != '$')) {
+        return -1;
+    }
+
+    // seperate after P$
+    string alphanum = strsub(pin_name, 2);
+
+    // get alpha and numeric parts
+    for (int i = 0; (alphanum[i]) && isupper(alphanum[i]) ; i++);
+    string alpha = strsub(alphanum, 0, i);
+    string numpart = strsub(alphanum, i);
+
+    // make sure numeric part is fully numeric
+    int numpart_num = mystrtoi(numpart);
+    if (numpart_num < 0) {
+        return -1;
+    }
+
+    int alphapart_num = alphastrtoi(alpha);
+    if (alphapart_num < 0) {
+        return -1;
+    }
+
+    return numpart_num + (10000 * alphapart_num);
+}
+
+void main()
+{
+    numeric string pinnames[];
+    int nnames = 0;
+    symbol(S) {
+        // for each pin, add its name to the list of pin names
+        int pinnames_numeric[];
+        S.pins(P) {
+            pinnames[nnames] = P.name;
+            pinnames_numeric[nnames] = pin_name_to_numeric_form(P.name);
+            nnames++;
+        }
+
+        //sort(nnames, pinnames_numeric, pinnames);
+        sort(nnames, pinnames);
+    }
+
+    string message = "";
+    for (int i = 0; i < nnames; i++) {
+        message += pinnames[i] + "; ";
+    }
+
+    dlgMessageBox(message);
+
+    string foobar;
+    sprintf(foobar, "%d %d %d",
+            strcmp("foofbal", "foofball"),
+            strcmp("foofball", "foofball"),
+            strcmp("foofbase", "foofball"));
+    dlgMessageBox(foobar);
+}

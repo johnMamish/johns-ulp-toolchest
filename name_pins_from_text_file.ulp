@@ -1,0 +1,204 @@
+/**
+ * Given a text file containing pin names and an open symbol, this ulp will go through the sorted
+ * pins alphanumerically, assigning names from the file sequentially to the alphanumerically sorted
+ * pins. The text file should contain one pin name per line. Empty lines or lines starting with a
+ * '#' are ignored.
+ *
+ * For instance, if the open symbol contains pins named
+ *    P$A1, P$A2, P$A3, P$A4, P$B1, P$B2, ..., P$D3, P$D4
+ *
+ * and the given text file contains names
+ *    VCC
+ *    VSS
+ *    NRST
+ *    NENABLE
+ *    NC@0
+ *    NC@1
+ *    .......
+ *    SDI
+ *    SDO
+ *
+ * The following assignments will be made:
+ *    P$A1     VCC
+ *    P$A2     VSS
+ *    P$A3     NRST
+ *    P$A4     NENABLE
+ *    P$B1     NC@0
+ *    P$B2     NC@1
+ *    ...      ...
+ *    P$D3     SDI
+ *    P$D4     SDO
+ *
+ * The file should not contain duplicate pin names.
+ */
+
+/**
+ * Returns 1 if a string is either 0 length, all whitespace, or its first non-whitespace character
+ * is a '#'
+ */
+int ignore_line(string line)
+{
+    if (strlen(line) == 0) {
+        return 1;
+    }
+
+    // go until we get a non-whitespace character
+    int i = 0;
+    for (; (i < strlen(line)) && (line[i] == 32); i++);
+
+    // if it was all whitespace, return 1
+    if (i == strlen(line)) {
+        return 1;
+    }
+
+    // if the next character is a '#', return 1
+    if (line[i] == 35) {
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * Acts just like C's strcmp
+ */
+int strcmp(string s1, string s2)
+{
+    int i = 0;
+    char c1;
+    char c2;
+    do
+    {
+        c1 = s1[i];
+        c2 = s2[i];
+        if (c1 == '\0') {
+            return c1 - c2;
+        }
+
+        i++;
+    } while (c1 == c2);
+    return c1 - c2;
+}
+
+
+void main() {
+    // Check to make sure that we're in the right view. This should run from the symbol editor view.
+    if (!symbol) {
+        dlgMessageBox("This ULP must be executed from the symbol creation view.");
+        exit(-1);
+    }
+
+    int stop = dlgMessageBox("Warning:\n"
+                             "This script uses EAGLE's builtin numeric string sorting method,\n"
+                             "so it's not appropriate for naming BGAs with pins named\n"
+                             "AA1, AA2, ... AB1, etc.\n"
+                             "Do you still want to continue?",
+                             "Yes, continue.", "No, stop.");
+    if (stop == 1) {
+        exit(-1);
+    }
+
+    // Prompt user for file
+    string pin_names_file = "";
+    dlgMessageBox("Please choose the text file containing your newline seperated pin names.", "OK");
+    pin_names_file = dlgFileOpen("choose text file containing your newline seperated pin names");
+
+    // open file and gather names, filtering out empty lines and lines starting with a '#'
+    string newnames[];
+    int nnames = fileread(newnames, pin_names_file);
+    {for (int i = 0; i < nnames; i++) {
+        if (ignore_line(newnames[i])) {
+            for (int j = i + 1; j < nnames; j++) {
+                newnames[j - 1] = newnames[j];
+            }
+            nnames--;
+            i--;
+        }
+    }}
+
+    string testy = "";
+    {for (int i = 0; i < nnames; i++) {
+        testy += newnames[i] + "; ";
+    }}
+    dlgMessageBox(testy);
+
+    // check for duplicate names.
+    int dups[];
+    int dupcount = 0;
+    {for (int i = 0; i < nnames; i++) {
+        for (int j = 0; j < nnames; j++) {
+            if ((i != j) && (strcmp(newnames[i], newnames[j]) == 0)) {
+                dups[dupcount++] = i;
+                break;
+            }
+        }
+    }}
+    if (dupcount > 0) {
+        string strbuf = "";
+        {for (int i = 0; i < dupcount; i++) {
+            sprintf(strbuf, "%s%d, ", strbuf, dups[i]);
+        }}
+        dlgMessageBox("Aborting due to duplicate strings at pin name indexes " + strbuf);
+        exit(-1);
+    }
+
+    // Get listing of pin names
+    numeric string current_pin_names[];
+    int npins = 0;
+    symbol(S) {
+        // for each pin, add its name to the list of pin names
+        S.pins(P) {
+            current_pin_names[npins++] = P.name;
+        }
+        sort(npins, current_pin_names);
+    }
+
+    string npins_str;
+    string nnames_str;
+    sprintf(npins_str, "%d", npins);
+    sprintf(nnames_str, "%d", nnames);
+    if (npins != nnames) {
+        dlgMessageBox("The number of names in your text file and number of pins in the symbol\n"
+                      "don't match. Your symbol has " + npins_str + " pins, but your file has " +
+                      nnames_str + " names.\n"
+                      "Aborting.");
+        exit(-1);
+    }
+
+    // confirm with user
+    {
+        string confirm_text = "<table><tr><th>Pin</th><th>New proposed name</th></tr>";
+        for (int i = 0; i < npins; i++) {
+            string sbuf;
+            sprintf(sbuf, "<tr><td>%s</td><td>%s</td></tr>", current_pin_names[i], newnames[i]);
+            confirm_text += sbuf;
+        }
+        confirm_text += "</table>";
+
+        int result = dlgDialog("confirm") {
+            dlgVBoxLayout {
+                dlgTextView(confirm_text);
+                dlgHBoxLayout {
+                    dlgPushButton("Accept") dlgAccept(1);
+                    dlgPushButton("Reject") dlgAccept(-1);
+                }
+            }
+        };
+
+        if (result == -1) {
+            dlgMessageBox("Proposed changes rejected by user.\nAborting.");
+            exit(-1);
+        }
+    }
+
+    // generate command
+    string cmd;
+    {for (int i = 0; i < npins; i++) {
+        string strbuf = "";
+        sprintf(strbuf, "name %s %s;\n", current_pin_names[i], newnames[i]);
+        cmd += strbuf;
+    }}
+
+    // execute
+    exit(cmd);
+}
